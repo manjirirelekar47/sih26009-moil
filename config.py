@@ -10,7 +10,7 @@ DATA_DEMO = ROOT / "data" / "demo"
 # --- Google Earth Engine ---------------------------------------------------
 # Your Google Cloud project ID (registered for Earth Engine, non-commercial use).
 # Either edit this string or set the environment variable EE_PROJECT.
-GEE_PROJECT = os.environ.get("EE_PROJECT", "YOUR-GCP-PROJECT-ID")
+GEE_PROJECT = os.environ.get("EE_PROJECT", "serious-citron-317703")
 
 # --- Study area: Balaghat, Madhya Pradesh ------------------------------------
 # [west, south, east, north] in degrees (~33 km x 33 km around the mine cluster)
