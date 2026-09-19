@@ -1,0 +1,20 @@
+# Data pipeline
+earthengine-api
+pandas
+numpy
+
+# Geospatial
+geopandas
+rasterio
+folium
+
+# ML / forecasting
+scikit-learn
+xgboost
+prophet
+shap
+matplotlib
+
+# App
+streamlit
+streamlit-folium
