@@ -1,0 +1,7 @@
+feature,importance
+rain_mean,0.32391423
+lst_mean,0.20225842
+elevation_m,0.16428673
+slope_deg,0.11844869
+ndvi_mean,0.111067094
+sar_vv_mean,0.0800248

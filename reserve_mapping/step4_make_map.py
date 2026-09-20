@@ -73,6 +73,12 @@ def pick_targets(df, top_n=TOP_N, min_sep_km=MIN_SEPARATION_KM):
     list gives distinct sites instead of neighbouring cells of one blob."""
     pool = df[df["label_class"] == "unknown"].sort_values(
         "prospectivity_score", ascending=False)
+    if pool.empty:
+        # Real mode: no unknown zones — pick top scoring mineralized zones instead
+        pool = df[df["label_class"] == "mineralized"].sort_values(
+            "prospectivity_score", ascending=False)
+    if pool.empty:
+        pool = df.sort_values("prospectivity_score", ascending=False)
     chosen = []
     for _, r in pool.iterrows():
         x, y = _km_offsets(r["lat"], r["lon"])
@@ -80,8 +86,13 @@ def pick_targets(df, top_n=TOP_N, min_sep_km=MIN_SEPARATION_KM):
             chosen.append((x, y, r))
         if len(chosen) == top_n:
             break
-    out = pd.DataFrame([c[2] for c in chosen])[
-        ["zone_id", "lat", "lon", "prospectivity_score"]].reset_index(drop=True)
+    if not chosen:
+        return pd.DataFrame(columns=["rank","zone_id","lat","lon",
+                                      "prospectivity_score","dist_to_reference_mine_km"])
+    rows = [c[2] for c in chosen]
+    available_cols = rows[0].index.tolist()
+    keep = [c for c in ["zone_id","lat","lon","prospectivity_score"] if c in available_cols]
+    out = pd.DataFrame(rows)[keep].reset_index(drop=True)
     out.insert(0, "rank", np.arange(1, len(out) + 1))
     dx, dy = _km_offsets(out["lat"], out["lon"])
     out["dist_to_reference_mine_km"] = np.hypot(dx, dy).round(1)  # info only
@@ -96,8 +107,9 @@ def build_prospectivity_map(top_n=TOP_N):
     targets = pick_targets(gdf, top_n=top_n)
 
     # colour scale (clipped so a few extreme zones don't wash out the rest)
-    vmin = float(unknown["prospectivity_score"].min())
-    vmax = float(np.percentile(unknown["prospectivity_score"], COLOR_CLIP_PCT))
+    score_pool = unknown if not unknown.empty else gdf
+    vmin = float(score_pool["prospectivity_score"].min())
+    vmax = float(np.percentile(score_pool["prospectivity_score"], COLOR_CLIP_PCT))
     cmap = cm.LinearColormap(
         ["#ffffb2", "#fecc5c", "#fd8d3c", "#f03b20", "#bd0026"],
         vmin=vmin, vmax=vmax,
@@ -111,11 +123,12 @@ def build_prospectivity_map(top_n=TOP_N):
                "World_Imagery/MapServer/tile/{z}/{y}/{x}"),
         attr="Esri World Imagery", name="Satellite", show=False).add_to(m)
 
-    # Layer 1: prospectivity score for zones WITHOUT validated evidence
+    # Layer 1: prospectivity score — use unknown zones or all zones in real mode
+    display_zones = unknown if not unknown.empty else gdf
     fg_zones = folium.FeatureGroup(
-        name="Prospectivity score (zones without validated evidence)", show=True)
+        name="Prospectivity score (all zones)", show=True)
     folium.GeoJson(
-        unknown[["zone_id", "prospectivity_score", "evidence", "geometry"]],
+        display_zones[["zone_id", "prospectivity_score", "evidence", "geometry"]],
         style_function=lambda f: {
             "fillColor": cmap(min(max(f["properties"]["prospectivity_score"], vmin), vmax)),
             "color": "none", "weight": 0, "fillOpacity": 0.65},
@@ -127,7 +140,8 @@ def build_prospectivity_map(top_n=TOP_N):
 
     # Layer 2: smoothed heatmap (off by default)
     fg_heat = folium.FeatureGroup(name="Smoothed heatmap", show=False)
-    HeatMap(unknown[["lat", "lon", "prospectivity_score"]].values.tolist(),
+    heat_src = unknown if not unknown.empty else gdf
+    HeatMap(heat_src[["lat", "lon", "prospectivity_score"]].values.tolist(),
             radius=18, blur=22, min_opacity=0.25).add_to(fg_heat)
     fg_heat.add_to(m)
 
