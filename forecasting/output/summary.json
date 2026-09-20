@@ -1,6 +1,6 @@
 {
   "latest_week": "2026-03-16",
-  "num_anomalies_detected": 11,
-  "current_risk_level": "Critical",
+  "num_anomalies_detected": 13,
+  "current_risk_level": "Moderate",
   "future_weeks_forecasted": 12
 }
