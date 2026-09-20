@@ -1,23 +1,4 @@
-# Data pipeline
-earthengine-api
 pandas
 numpy
-
-# Geospatial
-geopandas
-rasterio
-folium
-
-# ML / forecasting
-scikit-learn
-xgboost
-prophet
-shap
-matplotlib
-
-# App (dashboard uses st.metric(border=True), width="stretch", st.fragment)
 streamlit>=1.50
-streamlit-folium
 plotly
-
-joblib

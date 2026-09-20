@@ -1,0 +1,10 @@
+earthengine-api
+geopandas
+rasterio
+folium
+streamlit-folium
+scikit-learn
+xgboost
+prophet
+shap
+joblib
