@@ -25,6 +25,9 @@ All dates are `YYYY-MM-DD`. Weekly data uses **Monday** as `week_start`.
 **`data/processed/synthetic_equipment_downtime_weekly.csv`**
 `week_start, equipment_id, equipment_type, age_years, scheduled_hours, downtime_hours, breakdown_events`
 
+**`data/processed/equipment_risk.csv`** (Equipment Health -> Member 5, 6)
+`week_start, equipment_id, equipment_type, age_years, downtime_pct_8w, breakdowns_8w, c_downtime, c_breakdown, c_age, risk_score, risk_band, main_driver`
+
 ## Proposed hand-offs between the other modules (agree or edit these)
 
 - Member 3 -> 5, 6: `data/processed/forecast.csv` with `week_start, yhat, yhat_lower, yhat_upper, planned_tonnes, shortfall_risk (0-1), is_anomaly`
