@@ -15,8 +15,9 @@ prophet
 shap
 matplotlib
 
-# App
-streamlit
+# App (dashboard uses st.metric(border=True), width="stretch", st.fragment)
+streamlit>=1.50
 streamlit-folium
+plotly
 
 joblib
