@@ -19,8 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # --- make the repo root importable (config.py, src/, weather_predictor.py) ---
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,16 @@ try:
 except Exception:
     score_equipment = fleet_summary = None             # type: ignore
     LOADED["equipment_health"] = False
+
+# Shared decision logic: mirrors the verified Streamlit app.py (see dashboard_logic.py).
+DL_ERROR: str | None = None
+try:
+    import dashboard_logic as DL
+    LOADED["dashboard_logic"] = True
+except Exception as _e:                                # noqa: BLE001
+    DL = None                                          # type: ignore
+    DL_ERROR = repr(_e)
+    LOADED["dashboard_logic"] = False
 
 
 app = FastAPI(
@@ -98,6 +109,27 @@ def _zone_scores() -> pd.DataFrame:
     return pd.read_csv(RM / "zone_scores.csv")
 
 
+def _need_logic() -> None:
+    """Fail loudly instead of silently returning numbers that differ from the Streamlit app."""
+    if DL is None:
+        raise HTTPException(status_code=503, detail=f"dashboard_logic failed to load: {DL_ERROR}")
+
+
+def _card_json(c: dict, week_start: str) -> dict:
+    return {
+        "id": str(c.get("rule_id", "")),
+        "title": str(c.get("title", "")),
+        "priority": str(c.get("priority", "Low")).lower(),
+        "family": str(c.get("family", "")),
+        "rationale": str(c.get("reason", "")),
+        "action": str(c.get("action", "")),
+        "impactLabel": "Prescribed action",
+        "impactValue": str(c.get("action", ""))[:90],
+        "site": "Balaghat",
+        "weekStart": week_start,
+    }
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -110,6 +142,7 @@ def health() -> dict:
         "status": "ok",
         "repo_root": str(ROOT),
         "modules_loaded": LOADED,
+        "dashboard_logic_error": DL_ERROR,
         "files_present": {
             "production": (DATA / "synthetic_production_weekly.csv").exists(),
             "equipment_risk": (DATA / "equipment_risk.csv").exists(),
@@ -337,40 +370,39 @@ def shortfall_predictions(limit: int = 5) -> list[dict]:
 
 # ------------------------------------------------------------- weather (M4) ---
 @app.get("/api/environment/weather")
-def weather(weeks: int = 7) -> list[dict]:
-    """Weekly rainfall + the rule-based impact note for the most recent weeks.
+def weather(weeks: int = 7, week: str | None = None) -> list[dict]:
+    """Weekly satellite/rainfall series plus the SAME weather rules the Streamlit app uses.
 
-    NOTE: the pipeline produces WEEKLY aggregates, not daily values, so `day`
-    carries a week label. The frontend card is titled accordingly.
+    Soil moisture, 48h/7d rainfall, dry days and the alert levels come from
+    dashboard_logic.weather_for_week(), i.e. the daily CHIRPS / Sentinel-1 files, exactly
+    as app.py computes them. `week` (YYYY-MM-DD, a Monday) ends the window there.
     """
-    wf = _weekly_features().tail(max(1, weeks))
+    _need_logic()
+    wf = _weekly_features()
+    if week:
+        wf = wf[wf["week_start"] <= pd.Timestamp(week)]
+    wf = wf.tail(max(1, weeks))
 
     prod = _production()
     out: list[dict] = []
     for r in wf.itertuples():
-        rainfall = float(r.rainfall_mm)
         gate = prod[prod["week_start"] == r.week_start]
         fleet_dt = float(gate["fleet_downtime_pct"].iloc[0]) if len(gate) else 0.0
-
-        # Sentinel-1 VV backscatter (dB) -> 0–1 wetness proxy for the rule module.
-        moisture = min(1.0, max(0.0, (float(r.sar_vv_db) + 15.0) / 10.0))
-        note = "Rules module unavailable"
-        if evaluate_weather_impact is not None:
-            try:
-                res = evaluate_weather_impact(rainfall / 2.0, moisture, rainfall_7d_mm=rainfall)
-                note = res.get("road_risk", {}).get("message", note)
-            except Exception:
-                pass
-
+        wx = DL.weather_for_week(r.week_start)
         out.append({
             "day": r.week_start.strftime("%d %b"),
             "weekStart": r.week_start.strftime("%Y-%m-%d"),
-            "rainfallMm": round(rainfall, 1),
+            "rainfallMm": round(float(r.rainfall_mm), 1),
             "ndvi": round(float(r.ndvi), 3),
-            "soilMoistureIndex": round(moisture, 3),
+            "soilMoistureIndex": wx["soilMoistureIndex"],
             "landTempC": round(float(r.lst_c), 1),
             "fleetDowntimePct": fleet_dt,
-            "riskNote": note,
+            "riskNote": wx["riskNote"],
+            "alerts": wx["alerts"],
+            "delayFactor": wx["delayFactor"],
+            "rain48hMm": wx["rain48hMm"],
+            "rain7dMm": wx["rain7dMm"],
+            "dryDays": wx["dryDays"],
         })
     return out
 
@@ -412,75 +444,26 @@ def equipment_health(band: str | None = None) -> list[dict]:
 
 
 # ------------------------------------------------------ prescriptive engine (M5) ---
-def _latest_context() -> dict:
-    """Everything recommend() needs, pulled from the real CSVs."""
-    prod = _production()
-    latest = prod.iloc[-1]
-
-    eq = _equipment_risk()
-    last_eq = eq[eq["week_start"] == eq["week_start"].max()]
-    worst = str(last_eq.loc[last_eq["risk_score"].idxmax(), "equipment_id"]) if len(last_eq) else None
-
-    fx = _forecast()
-    fx_known = fx[fx["risk_score_pct"].notna()]
-    last_fx = fx_known.iloc[-1] if len(fx_known) else fx.iloc[-1]
-
-    return {
-        "week_start": latest["week_start"],
-        "shortfall_risk": float(last_fx["risk_score_pct"]) / 100.0,
-        "downtime_risk": float(latest["fleet_downtime_pct"]),
-        "blast_delay_days": int(latest["blast_delay_days"]),
-        "worst_equipment": worst,
-        "is_anomaly": bool(last_fx["is_anomaly"]),
-        "actual_tonnes": float(latest["actual_tonnes"]),
-        "planned_tonnes": float(latest["planned_tonnes"]),
-        "shortfall_pct": float(latest["shortfall_pct"]),
-        "rainfall_mm": float(latest["rainfall_mm"]),
-    }
-
-
 @app.get("/api/actions/prescriptive")
-def prescriptive_actions() -> list[dict]:
-    """Runs the real rules engine (src/prescriptive/rules.csv) for the latest week."""
-    ctx = _latest_context()
-    if recommend is None:
-        return []
-
-    cuts = downtime_cuts_from_csv() if downtime_cuts_from_csv is not None else None
-    cards = recommend(
-        shortfall_risk=ctx["shortfall_risk"],
-        alerts=[],
-        downtime_risk=ctx["downtime_risk"],
-        blast_delay_days=ctx["blast_delay_days"],
-        worst_equipment=ctx["worst_equipment"],
-        is_anomaly=ctx["is_anomaly"],
-        downtime_cuts=cuts,
-    )
-
-    out: list[dict] = []
-    for c in cards:
-        out.append({
-            "id": str(c.get("rule_id", "")),
-            "title": str(c.get("title", "")),
-            "priority": str(c.get("priority", "Low")).lower(),
-            "family": str(c.get("family", "")),
-            "rationale": str(c.get("reason", "")),
-            "action": str(c.get("action", "")),
-            "impactLabel": "Prescribed action",
-            "impactValue": str(c.get("action", ""))[:90],
-            "site": "Balaghat",
-            "weekStart": ctx["week_start"].strftime("%Y-%m-%d"),
-        })
-    return out
+def prescriptive_actions(week: str | None = None) -> list[dict]:
+    """Runs the real rules engine for a week (default: latest) with the SAME inputs as
+    the Streamlit app: forecast risk, weather alerts from satellite data, fleet downtime
+    band from equipment health, blast delays and anomaly flag."""
+    _need_logic()
+    try:
+        snap = DL.week_snapshot(week)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return [_card_json(c, snap["weekStart"]) for c in snap["cards"]]
 
 
 # ------------------------------------------------------------------ analytics ---
 @app.get("/api/alerts/active")
-def active_alerts() -> list[dict]:
+def active_alerts(week: str | None = None) -> list[dict]:
     """Dashboard alert feed: top prescriptive cards + the riskiest forecast weeks."""
     out: list[dict] = []
 
-    for i, c in enumerate(prescriptive_actions()[:3]):
+    for i, c in enumerate(prescriptive_actions(week)[:3]):
         out.append({
             "id": f"act-{i}",
             "severity": c["priority"] if c["priority"] in ("high", "medium", "low") else "low",
@@ -613,3 +596,63 @@ def settings() -> dict:
                         "weeklyDigest": True, "autoRefresh": True},
         "note": "Not persisted — the prototype has no database. Add PostgreSQL/PostGIS to make this real.",
     }
+
+
+# ------------------------------------------- week selector, what-if, explainability ---
+@app.get("/api/weeks")
+def weeks_list() -> dict:
+    """Weeks the dashboard can show (Mondays), for the week selector."""
+    _need_logic()
+    ws = DL.weeks()
+    return {"weeks": ws, "latest": ws[-1] if ws else None}
+
+
+@app.get("/api/week/snapshot")
+def api_week_snapshot(week: str | None = None) -> dict:
+    """Everything the Streamlit page shows for one week: production, forecast risk,
+    fleet band, weather inputs + 5 alerts, and the prescriptive cards."""
+    _need_logic()
+    try:
+        snap = DL.week_snapshot(week)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    snap = {k: v for k, v in snap.items() if k != "week_ts"}
+    snap["cards"] = [_card_json(c, snap["weekStart"]) for c in snap["cards"]]
+    return snap
+
+
+class WhatIfIn(BaseModel):
+    """Every field is optional; anything omitted keeps the selected week's actual value."""
+    week: str | None = None
+    rain48hMm: float | None = None
+    rain7dMm: float | None = None
+    soilMoistureIndex: float | None = None
+    dryDays: int | None = None
+    fleetDowntimeRisk: str | None = None
+    blastDelayDays: int | None = None
+    shortfallRisk: float | None = None
+
+
+@app.post("/api/whatif")
+def whatif(body: WhatIfIn) -> dict:
+    """The Streamlit what-if simulator: re-runs weather alerts and the rules engine."""
+    _need_logic()
+    payload = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+    try:
+        res = DL.whatif(**payload)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    ws = res["weekStart"]
+    res["baseline"]["cards"] = [_card_json(c, ws) for c in res["baseline"]["cards"]]
+    res["simulated"]["cards"] = [_card_json(c, ws) for c in res["simulated"]["cards"]]
+    return res
+
+
+@app.get("/api/reserves/importances")
+def reserves_importances() -> dict:
+    """Explainability: which inputs drive the prospectivity score (from Member 2's model)."""
+    _need_logic()
+    try:
+        return DL.reserve_importances()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"missing file: {e}")

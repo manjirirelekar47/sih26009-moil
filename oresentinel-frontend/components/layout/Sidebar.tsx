@@ -7,10 +7,8 @@ import {
   AlertTriangle,
   ClipboardList,
   CloudRain,
-  FileText,
   LayoutDashboard,
   Map,
-  Settings,
   ShieldCheck,
   TrendingUp,
   Wrench,
@@ -30,8 +28,6 @@ export const NAV_ITEMS = [
   { href: '/weather-environment', label: 'Weather & Environment', icon: CloudRain },
   { href: '/equipment-health', label: 'Equipment Health', icon: Wrench },
   { href: '/corrective-actions', label: 'Corrective Actions', icon: ClipboardList },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 
 /** OreSentinel wordmark: badge + name + tagline. */
@@ -53,7 +49,7 @@ function Logo() {
   );
 }
 
-/** Bottom card: MOIL Limited / Ministry of Steel / Govt. of India. */
+/** Bottom card: who the prototype is built for (not an official MOIL product). */
 function MinistryCard() {
   return (
     <div className="mt-4 rounded-xl border border-white/10 bg-ink-deep/80 p-3">
@@ -62,9 +58,8 @@ function MinistryCard() {
           <Activity className="h-4 w-4 text-brand-mid" strokeWidth={2.4} />
         </span>
         <div className="leading-snug">
-          <p className="text-[11.5px] font-bold text-white">MOIL Limited</p>
-          <p className="text-[9.5px] text-white/55">Ministry of Steel</p>
-          <p className="text-[9.5px] text-white/40">Govt. of India</p>
+          <p className="text-[11.5px] font-bold text-white">Prototype for MOIL Limited</p>
+          <p className="text-[9.5px] text-white/55">SIH 2026 · Problem Statement 26009</p>
         </div>
       </div>
     </div>

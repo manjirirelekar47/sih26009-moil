@@ -2,6 +2,7 @@
 
 import { Wrench } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
+import EquipmentHealthChart from '@/components/charts/EquipmentHealthChart';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { SeverityBadge } from '@/components/ui/Badge';
 import { DataStateBadge } from '@/components/ui/DataStateBadge';
@@ -50,6 +51,10 @@ export default function EquipmentHealthPage() {
           </p>
         </div>
       </Card>
+
+      <div className="mb-4">
+        <EquipmentHealthChart fleet={fleet} />
+      </div>
 
       <Card className="card-pad">
         <CardHeader title="Fleet status" icon={<Wrench className="h-4 w-4" />} />

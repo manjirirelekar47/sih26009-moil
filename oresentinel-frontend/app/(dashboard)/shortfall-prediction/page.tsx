@@ -2,6 +2,8 @@
 
 import { AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
+import MineRiskChart from '@/components/charts/MineRiskChart';
+import ShortfallTrendChart from '@/components/charts/ShortfallTrendChart';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { SeverityBadge } from '@/components/ui/Badge';
 import { DataStateBadge } from '@/components/ui/DataStateBadge';
@@ -27,8 +29,14 @@ export default function ShortfallPredictionPage() {
         action={<DataStateBadge show={usingFallback} />}
       />
 
+      <div className="mb-4">
+        <ShortfallTrendChart risks={risks} />
+      </div>
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-7">
+        <div className="space-y-4 xl:col-span-7">
+          <MineRiskChart mines={mines} />
+
           <Card className="card-pad">
             <CardHeader title="Mine-level risk" />
             <table className="mt-4 w-full text-left">
