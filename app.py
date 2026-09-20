@@ -92,16 +92,14 @@ def load_reserve_outputs():
     """Member 2 outputs. Returns None if the pipeline has not been run."""
     if not all(p.exists() for p in [RM_MAP_HTML, RM_TARGETS, RM_FI_CSV]):
         return None
-    is_demo = True   # safe default: show the DEMO label unless the model says otherwise
     fi = pd.read_csv(RM_FI_CSV)
-    try:
-        sys.path.append(str(RM_DIR))
-        from step3_train_model import load_bundle, get_feature_importances
-        bundle = load_bundle(str(RM_MODEL))
-        is_demo = bool(bundle.get("is_demo", True))
-        fi = get_feature_importances(bundle)
-    except Exception:
-        pass   # fall back to the CSV
+    # Real vs demo is read from the label source in zone_scores.csv (real runs are tagged REAL_...),
+    # so it never depends on loading the model file. Default to demo if the file is missing.
+    is_demo = True
+    scores_csv = RM_DIR / "data" / "zone_scores.csv"
+    if scores_csv.exists():
+        src = pd.read_csv(scores_csv, usecols=["label_source"])["label_source"].astype(str).str.upper()
+        is_demo = not src.str.startswith("REAL").any()
     return {
         "is_demo": is_demo,
         "fi": fi,
