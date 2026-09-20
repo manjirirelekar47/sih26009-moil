@@ -18,3 +18,5 @@ matplotlib
 # App
 streamlit
 streamlit-folium
+
+joblib

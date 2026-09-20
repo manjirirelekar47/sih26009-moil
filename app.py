@@ -20,6 +20,13 @@ from config import DATA_PROCESSED, DATA_RAW
 from src.equipment_health.health import score_equipment, fleet_summary
 from src.prescriptive.engine import recommend, risk_band
 from weather_predictor import evaluate_weather_impact
+import streamlit.components.v1 as components
+
+RM_DIR      = ROOT / "reserve_mapping"
+RM_MODEL    = RM_DIR / "models" / "prospectivity_model.joblib"
+RM_MAP_HTML = RM_DIR / "data" / "prospectivity_map.html"
+RM_TARGETS  = RM_DIR / "data" / "top_exploration_targets.csv"
+RM_FI_CSV   = RM_DIR / "data" / "feature_importances.csv"
 
 FORECAST_CSV   = ROOT / "forecasting" / "output" / "forecast_results.csv"
 FORECAST_JSON  = ROOT / "forecasting" / "output" / "summary.json"
@@ -51,11 +58,14 @@ body { background: #f0f4f8; }
 .weather-moderate { background:#fffbf0; border:1px solid #e67e22; border-radius:8px; padding:.6rem .9rem; margin-bottom:.4rem; }
 .weather-low      { background:#f0fff4; border:1px solid #27ae60; border-radius:8px; padding:.6rem .9rem; margin-bottom:.4rem; }
 .weather-normal   { background:#f8f9fa; border:1px solid #ccc;    border-radius:8px; padding:.6rem .9rem; margin-bottom:.4rem; }
+.block-container { padding-top: 1.5rem; }
+h2, h3 { color: #1f4e79; }
+@media (max-width: 768px) { .metric-card { padding: .6rem .8rem; } }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("⛏️ MOIL Mining Intelligence Dashboard")
-st.caption("SIH 26009 · Balaghat Mine · Data Pipeline + Equipment Health + Forecasting + Weather + Prescriptive Engine")
+st.caption("SIH 26009 | Balaghat Mine | Reserve Mapping | Forecasting | Weather | Equipment Health | Prescriptive Actions | What-if")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data
@@ -77,6 +87,25 @@ except FileNotFoundError as e:
     st.stop()
 
 all_weeks = sorted(prod["week_start"].dt.date.unique())
+@st.cache_data
+def load_reserve_outputs():
+    """Member 2 outputs. Returns None if the pipeline has not been run."""
+    if not all(p.exists() for p in [RM_MAP_HTML, RM_TARGETS, RM_FI_CSV]):
+        return None
+    fi = pd.read_csv(RM_FI_CSV)
+    # Real vs demo is read from the label source in zone_scores.csv (real runs are tagged REAL_...),
+    # so it never depends on loading the model file. Default to demo if the file is missing.
+    is_demo = True
+    scores_csv = RM_DIR / "data" / "zone_scores.csv"
+    if scores_csv.exists():
+        src = pd.read_csv(scores_csv, usecols=["label_source"])["label_source"].astype(str).str.upper()
+        is_demo = not src.str.startswith("REAL").any()
+    return {
+        "is_demo": is_demo,
+        "fi": fi,
+        "map_html": RM_MAP_HTML.read_text(encoding="utf-8"),
+        "targets": pd.read_csv(RM_TARGETS),
+    }
 
 # ── Weather adapter ───────────────────────────────────────────────────────────
 LEVEL_MAP = {
@@ -338,7 +367,39 @@ if forecast is not None:
         st.pyplot(fig); plt.close(fig)
 
     st.divider()
+# ---- ROW 3b: Reserve Mapping + Explainability (Member 2) ----
+st.subheader("Reserve Mapping - Prospectivity")
+rm = load_reserve_outputs()
+if rm is None:
+    st.info("Reserve mapping outputs not found. Run  python run_pipeline.py  "
+            "inside the reserve_mapping folder first.")
+else:
+    if rm["is_demo"]:
+        st.warning("DEMO / SYNTHETIC DATA - software test only. Scores are a prospectivity "
+                   "indicator, not a reserve estimate or real manganese findings.")
+    map_col, tbl_col = st.columns([3, 2])
+    with map_col:
+        components.html(rm["map_html"], height=560)
+    with tbl_col:
+        st.markdown("**Top 10 Exploration Targets**")
+        st.dataframe(rm["targets"].head(10), use_container_width=True, hide_index=True)
 
+    st.subheader("Explainability - Why these scores?")
+    fi = rm["fi"].sort_values("importance")
+    ex_l, ex_r = st.columns([3, 2])
+    with ex_l:
+        fig, ax = plt.subplots(figsize=(7, 3))
+        ax.barh(fi["feature"], fi["importance"], color="#1f4e79")
+        ax.set_xlabel("Model importance")
+        fig.tight_layout(); st.pyplot(fig); plt.close(fig)
+    with ex_r:
+        top = fi.iloc[-1]
+        st.markdown(f"**Top driver:** `{top['feature']}` "
+                    f"({top['importance']*100:.0f}% of total importance)")
+        st.caption("Longer bars mean the feature influenced the prospectivity score more. "
+                   + ("In demo mode these come from synthetic data." if rm["is_demo"] else ""))
+
+st.divider()
 # ── ROW 4: Equipment Health ───────────────────────────────────────────────────
 st.subheader("🔧 Equipment Health — Selected Week")
 eq_sorted = week_risk.sort_values("risk_score", ascending=False)
@@ -399,7 +460,61 @@ for card in cards:
     </div>""", unsafe_allow_html=True)
 
 st.divider()
+# ---- ROW 6b: What-if Simulator ----
+st.subheader("What-if Simulator")
+st.caption("Change the inputs - weather alerts and recommendations re-run instantly. "
+           "Sliders start from the selected week's values.")
 
+k = str(selected_date)   # resets the sliders when the week changes
+w1, w2 = st.columns(2)
+with w1:
+    sim_rain48 = st.slider("Rainfall, last 48h (mm)", 0.0, 150.0, float(min(rain_48, 150.0)), 1.0, key=f"wi_r48_{k}")
+    sim_rain7  = st.slider("Rainfall, last 7 days (mm)", 0.0, 400.0, float(min(rain_7d, 400.0)), 1.0, key=f"wi_r7_{k}")
+    sim_smi    = st.slider("Soil moisture index", 0.0, 1.0, float(min(max(smi, 0.0), 1.0)), 0.01, key=f"wi_smi_{k}")
+    sim_dry    = st.slider("Consecutive dry days", 0, 30, int(min(dry_days, 30)), key=f"wi_dry_{k}")
+with w2:
+    bands = ["low", "medium", "high"]
+    cur = str(fleet["downtime_risk"]).lower()
+    sim_down  = st.selectbox("Fleet downtime risk", bands, index=bands.index(cur) if cur in bands else 0, key=f"wi_down_{k}")
+    sim_blast = st.slider("Blast delay (days)", 0, 5, int(min(week_prod["blast_delay_days"], 5)), key=f"wi_blast_{k}")
+    sim_short = st.slider("Shortfall risk", 0.0, 1.0, float(min(max(shortfall_score, 0.0), 1.0)), 0.01, key=f"wi_short_{k}")
+
+sim_wx = evaluate_weather_impact(
+    rainfall_48h_mm=sim_rain48, soil_moisture_index=sim_smi,
+    rainfall_7d_mm=sim_rain7, consecutive_dry_days=int(sim_dry),
+)
+sim_alerts = weather_to_alerts(sim_wx)
+sim_cards = recommend(
+    shortfall_risk=sim_short, alerts=sim_alerts, downtime_risk=sim_down,
+    blast_delay_days=int(sim_blast), worst_equipment=fleet["worst_equipment"],
+    is_anomaly=is_anomaly,
+)
+
+sim_delay = sim_wx.get("overall_delay_factor", 0)
+m1, m2, m3 = st.columns(3)
+m1.metric("Weather delay factor", f"{sim_delay*100:.0f}%",
+          delta=f"{(sim_delay - delay)*100:+.0f} pts vs actual week", delta_color="inverse")
+m2.metric("Active weather alerts", len(sim_alerts),
+          delta=len(sim_alerts) - len(alerts_in), delta_color="inverse")
+m3.metric("Recommendations", len(sim_cards))
+
+chip_cols = st.columns(5)
+for col, (key, (label, _)) in zip(chip_cols, alert_labels.items()):
+    lvl = sim_wx[key].get("level", "NORMAL")
+    col.markdown(f"""<div class="{weather_css(lvl)}">
+    <div style="font-size:.8rem;font-weight:700">{label}</div>
+    <div style="font-size:.75rem;font-weight:700">{lvl}</div>
+    </div>""", unsafe_allow_html=True)
+
+for card in sim_cards:
+    css = f"card-{card['priority'].lower()}"
+    st.markdown(f"""<div class="{css}">
+    <strong>[{card['priority']}] {card['title']}</strong><br>
+    <span style="font-size:.9rem">{card['action']}</span><br>
+    <span style="font-size:.8rem;color:#555">{card['reason']}</span>
+    </div>""", unsafe_allow_html=True)
+
+st.divider()
 # ── ROW 7: Raw data tables ────────────────────────────────────────────────────
 with st.expander("📋 Raw — Production (this week)"):
     st.dataframe(week_prod.to_frame().T, use_container_width=True)
