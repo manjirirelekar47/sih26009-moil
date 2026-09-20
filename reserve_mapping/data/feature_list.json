@@ -1,1 +1,1 @@
-["ndvi_mean", "sar_vv_mean", "lst_mean", "rain_mean", "elevation_m", "slope_deg"]
+["ndvi_mean", "ndvi_std", "sar_vv_mean", "sar_vh_mean", "lst_mean", "rain_mean", "elevation_m", "slope_deg"]

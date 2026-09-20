@@ -8,6 +8,8 @@ elevation and slope. Distance to the known mine is added so Member 2 can build t
 
 Output: data/processed/zone_features.csv
 Run from the repo root:   python -m src.data_pipeline.pull_zone_features
+
+v2: Added ndvi_std and sar_vh_mean to match Member 2's feature contract.
 """
 import math
 
@@ -43,14 +45,34 @@ def make_cells():
     return cells
 
 
+def s1_vh_collection(start, end_excl):
+    """Sentinel-1 SAR, VH polarisation."""
+    return (
+        ee.ImageCollection("COPERNICUS/S1_GRD")
+        .filterBounds(ee.Geometry.Rectangle(BBOX))
+        .filterDate(start, end_excl)
+        .filter(ee.Filter.eq("instrumentMode", "IW"))
+        .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+        .select("VH")
+        .map(lambda img: img.rename("sar_vh_mean_db").copyProperties(img, ["system:time_start"]))
+    )
+
+
 def feature_stack():
     end_excl = _end_exclusive(END_DATE)
     years = (pd.Timestamp(END_DATE) - pd.Timestamp(START_DATE)).days / 365.25
     dem = ee.Image("USGS/SRTMGL1_003")
+
+    s2 = s2_collection(START_DATE, end_excl)
+    s1_vv = s1_collection(START_DATE, end_excl)
+    s1_vh = s1_vh_collection(START_DATE, end_excl)
+
     return ee.Image.cat(
         [
-            s2_collection(START_DATE, end_excl).median().rename("ndvi_median"),
-            s1_collection(START_DATE, end_excl).mean().rename("sar_vv_mean_db"),
+            s2.median().rename("ndvi_median"),          # NDVI median
+            s2.reduce(ee.Reducer.stdDev()).rename("ndvi_std"),  # NDVI std dev
+            s1_vv.mean().rename("sar_vv_mean_db"),      # SAR VV mean
+            s1_vh.mean().rename("sar_vh_mean_db"),      # SAR VH mean (new)
             modis_collection(START_DATE, end_excl).mean().rename("lst_mean_c"),
             chirps_collection(START_DATE, end_excl).sum().divide(years).rename("rain_mm_per_year"),
             dem.rename("elevation_m"),

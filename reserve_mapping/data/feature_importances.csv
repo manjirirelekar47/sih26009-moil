@@ -1,7 +1,9 @@
 feature,importance
-rain_mean,0.32391423
-lst_mean,0.20225842
-elevation_m,0.16428673
-slope_deg,0.11844869
-ndvi_mean,0.111067094
-sar_vv_mean,0.0800248
+rain_mean,0.25067243
+lst_mean,0.18044548
+elevation_m,0.1506411
+ndvi_std,0.10918007
+slope_deg,0.09552617
+ndvi_mean,0.08235128
+sar_vv_mean,0.069636226
+sar_vh_mean,0.061547287
