@@ -4,22 +4,6 @@
 
 Ministry of Steel / MOIL Limited. Balaghat mine, Madhya Pradesh.
 
----
-
-## What's Built
-
-| Module | Owner | Status | Real Data |
-|--------|-------|--------|-----------|
-| Data Pipeline (Sentinel-2, Sentinel-1, MODIS, CHIRPS) | Member 1 (Manjiri) | ✅ Done | ✅ Google Earth Engine |
-| Equipment Health (downtime risk score, 8 machines) | Member 1 (Manjiri) | ✅ Done | ✅ Real rainfall-driven |
-| Reserve Mapping (RF classifier, Folium heatmap) | Member 2 (Samruddhi) | ✅ Done | ✅ Real EE features |
-| Production Forecasting + Shortfall Prediction | Member 3 (Samiksha) | ✅ Done | ✅ 156 weeks real data |
-| Weather Impact Predictor | Member 4 (Shreya) | ✅ Done | ✅ Real SAR + CHIRPS |
-| Prescriptive Engine (17 rules, no gaps) | Member 5 (Srushti) | ✅ Done | ✅ |
-| Unified Dashboard | Member 6 (Yuga) | 🔄 In progress | — |
-
----
-
 ## Folder Structure
 
 ```
