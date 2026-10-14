@@ -176,4 +176,4 @@ Yes — change `BBOX`, `MINE_LAT`, `MINE_LON` in `config.py` and rerun the pipel
 
 Google Earth Engine · Sentinel-2 · Sentinel-1 SAR · MODIS · CHIRPS · Prophet · scikit-learn · XGBoost · GeoPandas · Folium · Streamlit · Python 3.11
 
-*SIH 26009 — Ministry of Steel / MOIL Limited*
+*SIH 26009 — Ministry of Steel / MOIL Limited*      
